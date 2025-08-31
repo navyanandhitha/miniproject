@@ -13,7 +13,7 @@ CLASS_NAMES = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
                'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
 NUM_CLASSES = len(CLASS_NAMES)
 MODEL_PATH = "fashion_mnist_cnn.h5"
-EPOCHS = 30  # fixed (no UI)
+EPOCHS = 30
 VAL_SPLIT = 0.20
 BATCH_SIZE = 64
 SEED = 42
@@ -77,33 +77,21 @@ model = get_or_train_model()
 
 # ---------- Preprocess uploaded image to FMNIST style ----------
 def to_fmnist_tensor(file) -> np.ndarray:
-    """
-    Returns two tensors (no_invert, invert), each shape (1,28,28,1) in [0,1].
-    We will run the model on both and pick the one with higher top probability.
-    """
-    img = Image.open(file).convert("L")        # grayscale
-    # center-crop to square
+    img = Image.open(file).convert("L")
     w, h = img.size
     side = min(w, h)
-    left = (w - side) // 2
-    top = (h - side) // 2
+    left, top = (w - side) // 2, (h - side) // 2
     img = img.crop((left, top, left + side, top + side))
-    # resize to 28×28 (FMNIST size)
     img = img.resize((28, 28), Image.Resampling.LANCZOS)
-    # auto-contrast to pop the clothing silhouette
     img = ImageOps.autocontrast(img)
-
     arr = np.array(img).astype("float32") / 255.0
     arr = arr[..., None]
-    arr_no_inv = arr[None, ...]         # (1,28,28,1)
-    arr_inv    = (1.0 - arr)[None, ...] # inverted (dark background, bright item)
-    return arr_no_inv, arr_inv
+    return arr[None, ...], (1.0 - arr)[None, ...]
 
 def best_probs_for_two(t1, t2):
     p1 = model.predict(t1, verbose=0)[0]
     p2 = model.predict(t2, verbose=0)[0]
-    # choose the set with larger top-1 confidence
-    return (p1 if p1.max() >= p2.max() else p2)
+    return p1 if p1.max() >= p2.max() else p2
 
 def bar_plot(probs):
     fig = plt.figure(figsize=(8, 4))
@@ -117,25 +105,25 @@ def bar_plot(probs):
     fig.tight_layout()
     return fig
 
-# ---------- UI (matches your screenshot layout) ----------
+# ---------- UI ----------
 st.markdown("# 🧥 Fashion-MNIST Clothing Type Classifier")
-st.markdown("*Upload a clothing image (PNG/JPG)*")
+st.markdown("Upload a clothing image (PNG/JPG)")
 file = st.file_uploader(" ", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
 
 if file is not None:
-    # show the uploaded image (as-is)
-    st.image(file, use_column_width=True)
+    # *THIS IS THE KEY CHANGE FOR THE SMALLER IMAGE*
+    st.image(file, caption="Uploaded Image", width=200)
 
-    # preprocess -> predict (choose better of normal vs inverted)
+    # Preprocess and predict
     x_no_inv, x_inv = to_fmnist_tensor(file)
     probs = best_probs_for_two(x_no_inv, x_inv)
-
     pred_id = int(np.argmax(probs))
     pred_name = CLASS_NAMES[pred_id]
     conf = float(probs[pred_id])
 
-    st.markdown(f"*Prediction:* {LONG_LABELS[pred_name]}")
-    st.markdown(f"*Confidence:* *{conf*100:.2f}%*")
+    # Display prediction and confidence
+    st.markdown(f"### Prediction: *{pred_name}*")
+    st.markdown(f"### Confidence: *{conf*100:.2f}%*")
 
-    # probabilities bar chart (class ids on x-axis)
+    # Display probabilities bar chart
     st.pyplot(bar_plot(probs), clear_figure=True)
